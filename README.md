@@ -96,7 +96,8 @@ A hardened unit template ships in `systemd/btproxy.service` (dynamic user,
 allows any system-bus user to use `org.bluez`, so no root is required:
 
 ```sh
-sudo install -m644 systemd/btproxy.service /etc/systemd/system/
+make install          # binary → /usr/local/bin, unit → /etc/systemd/system,
+                      # firewalld definition → /etc/firewalld/services (if firewalld exists)
 sudo systemctl daemon-reload
 sudo systemctl enable --now btproxy
 journalctl -u btproxy -f

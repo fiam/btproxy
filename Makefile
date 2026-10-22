@@ -10,7 +10,9 @@ GO_SOURCES := $(shell find cmd internal tinypb tools -name '*.go' ! -name 'api_g
 # the generator.
 STAMP := .generated-code
 
-.PHONY: bootstrap build test vet generate clean
+.PHONY: bootstrap build test vet generate generate-code clean install
+
+PREFIX ?= /usr/local
 
 bootstrap:
 	mise install
@@ -42,6 +44,20 @@ test: $(STAMP)
 
 vet: $(STAMP)
 	$(GO) vet ./...
+
+# Installs the daemon, the systemd unit and (when firewalld is present)
+# the firewalld service definition. Installs only — reloading and
+# enabling are left to the admin:
+#
+#	sudo systemctl daemon-reload && sudo systemctl enable --now btproxy
+#	sudo firewall-cmd --reload
+#	sudo firewall-cmd --permanent --add-service=btproxy && sudo firewall-cmd --reload
+install: build
+	sudo install -m755 bin/btproxy $(PREFIX)/bin/btproxy
+	sudo install -m644 systemd/btproxy.service /etc/systemd/system/btproxy.service
+	@if [ -d /etc/firewalld ]; then \
+		sudo install -m644 systemd/btproxy-firewalld.xml /etc/firewalld/services/btproxy.xml; \
+	fi
 
 clean:
 	rm -rf bin $(STAMP) internal/esphome/api_gen.go
