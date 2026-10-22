@@ -102,6 +102,26 @@ sudo systemctl enable --now btproxy
 journalctl -u btproxy -f
 ```
 
+On firewalld hosts, allow the API port — the ESPHome dialog's "Unable to
+connect" error is usually this, and the shipped systemd unit prints a
+journal warning on startup when it detects this state (the check is
+informational: btproxy starts and listens regardless, and opening the
+firewall takes effect immediately — no service restart needed). Reload
+first so firewalld loads the freshly installed service definition, then
+add it:
+
+```sh
+sudo firewall-cmd --reload
+sudo firewall-cmd --permanent --add-service=btproxy && sudo firewall-cmd --reload
+```
+
+or restricted to the Home Assistant host only:
+
+```sh
+sudo firewall-cmd --permanent --add-rich-rule='rule family=ipv4 source address=<ha-ip> port port=6053 protocol=tcp accept'
+sudo firewall-cmd --reload
+```
+
 ## Development tools (`tools/`)
 
 - `btprobe` (in `tools/`) — HA-style client: full handshake, prints

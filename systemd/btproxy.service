@@ -24,6 +24,14 @@ Requires=bluetooth.service
 Type=simple
 # No --name: the default is the short hostname, which Home Assistant
 # displays and which is used as the mDNS instance name.
+#
+# FIREWALL: on firewalld hosts the API port must be allowed, or Home
+# Assistant cannot connect (btproxy itself binds fine, so the symptom is
+# HA's "Unable to connect" dialog). Preferred fix — install the shipped
+# service definition and enable it:
+#   sudo install -m644 btproxy-firewalld.xml /etc/firewalld/services/btproxy.xml
+#   sudo firewall-cmd --permanent --add-service=btproxy && sudo firewall-cmd --reload
+ExecStartPre=/bin/sh -c 'command -v firewall-cmd >/dev/null 2>&1 || exit 0; [ "$(firewall-cmd --state 2>/dev/null)" = running ] || exit 0; [ "$(firewall-cmd --query-port=6053/tcp 2>/dev/null)" = no ] || exit 0; [ "$(firewall-cmd --query-service=btproxy 2>/dev/null)" = no ] || exit 0; echo "WARNING: firewalld is active but port 6053/tcp is not allowed; Home Assistant will NOT be able to connect. Fix: firewall-cmd --permanent --add-service=btproxy && firewall-cmd --reload"; exit 0'
 ExecStart=/usr/local/bin/btproxy --mdns
 Restart=on-failure
 RestartSec=2

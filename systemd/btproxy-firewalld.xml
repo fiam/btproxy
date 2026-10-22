@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<service>
+  <short>btproxy</short>
+  <description>ESPHome-native Bluetooth proxy for Home Assistant (native API, TCP 6053)</description>
+  <port protocol="tcp" port="6053"/>
+</service>
