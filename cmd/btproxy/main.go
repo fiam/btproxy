@@ -11,6 +11,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -50,6 +51,12 @@ func main() {
 	host, err := os.Hostname()
 	if err != nil {
 		host = "btproxy"
+	}
+	// The kernel hostname may be an FQDN; use the short form as the
+	// default device name (Home Assistant displays it, and the mDNS
+	// instance name should be a single label).
+	if i := strings.IndexByte(host, '.'); i > 0 {
+		host = host[:i]
 	}
 	if *name == "" {
 		*name = host

@@ -22,7 +22,9 @@ Requires=bluetooth.service
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/btproxy --name %H --mdns
+# No --name: the default is the short hostname, which Home Assistant
+# displays and which is used as the mDNS instance name.
+ExecStart=/usr/local/bin/btproxy --mdns
 Restart=on-failure
 RestartSec=2
 

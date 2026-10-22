@@ -20,12 +20,12 @@ const (
 	unspecProto  = int32(-1) // IPv4 + IPv6
 )
 
-// Entry-group states from avahi's common definitions.
+// Entry-group states (avahi-common/defs.h, AvahiEntryGroupState).
 const (
 	stateUncommited  = 0
 	stateRegistering = 1
-	stateCollision   = 2
-	stateEstablished = 3
+	stateEstablished = 2
+	stateCollision   = 3
 	stateFailure     = 4
 )
 
@@ -120,15 +120,14 @@ func (p *Publisher) watchState() {
 			}
 			switch state {
 			case stateCollision:
-				// Typically a previous btproxy instance's group has
-				// not been freed yet; the service keeps running but
-				// may not be discoverable under this name until the
-				// stale entry disappears.
-				p.log.Warn("mDNS service name already in use (stale entry or duplicate btproxy instance)")
+				// A service with this name already exists (typically
+				// another btproxy instance announcing on the same
+				// network).
+				p.log.Warn("mDNS service name already in use")
 			case stateFailure:
 				p.log.Error("mDNS entry group failed")
 			case stateEstablished:
-				p.log.Debug("mDNS service established")
+				p.log.Info("mDNS service established")
 			}
 		}
 	}
