@@ -1,0 +1,134 @@
+// btproxy ESPHome API message IDL.
+//
+// A minimal proto-subset: message name, optional API type number in
+// parentheses, then fields. Field types: uint32, uint64, sint32, bool,
+// string, bytes, fixed32, fixed64, or another message name. `optional`
+// scalars are omitted when zero (proto3 style); strings/bytes are always
+// omitted when empty; everything else is always written. `repeated` and
+// single nested messages are supported.
+
+message HelloRequest (1) {
+	string client = 1;
+}
+
+message HelloResponse (2) {
+	uint32 api_version_major = 1;
+	uint32 api_version_minor = 2;
+	string server_info = 3;
+	string name = 4;
+}
+
+message ConnectRequest (3) {
+	string password = 1;
+}
+
+message ConnectResponse (4) {
+	bool invalid_password = 1;
+}
+
+message DisconnectRequest (5) {}
+
+message PingRequest (7) {}
+
+message PingResponse (8) {}
+
+message DeviceInfoRequest (9) {}
+
+message DeviceInfoResponse (10) {
+	bool uses_password = 1;
+	string name = 2;
+	string mac_address = 3;
+	string esphome_version = 4;
+	string compilation_time = 5;
+	string model = 6;
+	bool has_deep_sleep = 7;
+	optional uint32 webserver_port = 10;
+	string manufacturer = 12;
+	string friendly_name = 13;
+	optional uint32 bluetooth_proxy_feature_flags = 15;
+	string suggested_area = 16;
+	string bluetooth_mac_address = 18;
+}
+
+message ListEntitiesRequest (11) {}
+
+message ListEntitiesSwitchResponse (17) {
+	string object_id = 1;
+	fixed32 key = 2;
+	string name = 3;
+	string icon = 5;
+	optional bool assumed_state = 6;
+	optional bool disabled_by_default = 7;
+	optional uint32 entity_category = 8;
+	string device_class = 9;
+}
+
+message ListEntitiesTextSensorResponse (18) {
+	string object_id = 1;
+	fixed32 key = 2;
+	string name = 3;
+	string icon = 5;
+	optional bool disabled_by_default = 6;
+	optional uint32 entity_category = 7;
+	string device_class = 8;
+}
+
+message ListEntitiesSensorResponse (16) {
+	string object_id = 1;
+	fixed32 key = 2;
+	string name = 3;
+	string icon = 5;
+	string unit_of_measurement = 6;
+	optional uint32 accuracy_decimals = 7;
+	optional bool force_update = 8;
+	string device_class = 9;
+	optional uint32 state_class = 12;
+}
+
+message ListEntitiesDoneResponse (19) {}
+
+message SubscribeStatesRequest (20) {}
+
+message SwitchStateResponse (26) {
+	fixed32 key = 1;
+	bool state = 2;
+}
+
+message TextSensorStateResponse (27) {
+	fixed32 key = 1;
+	string state = 2;
+}
+
+message SensorStateResponse (25) {
+	fixed32 key = 1;
+	float state = 2;
+}
+
+message SwitchCommandRequest (33) {
+	fixed32 key = 1;
+	bool state = 2;
+}
+
+message GetTimeRequest (36) {}
+
+message GetTimeResponse (37) {
+	uint32 epoch_seconds = 1;
+}
+
+message SubscribeBluetoothLEAdvertisementsRequest (66) {
+	uint32 flags = 1;
+}
+
+message UnsubscribeBluetoothLEAdvertisementsRequest (87) {}
+
+// Nested only; no API type number.
+message BluetoothLERawAdvertisement {
+	uint64 address = 1;
+	sint32 rssi = 2;
+	uint32 address_type = 3;
+	bytes data = 4;
+}
+
+message BluetoothLERawAdvertisementsResponse (93) {
+	repeated BluetoothLERawAdvertisement advertisements = 1;
+}

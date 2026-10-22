@@ -1,0 +1,52 @@
+# btproxy systemd unit template.
+#
+# Install to /etc/systemd/system/btproxy.service, adjust ExecStart paths and
+# flags, then:
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now btproxy
+#
+# No root is required: BlueZ's D-Bus policy allows any system-bus user to
+# use org.bluez, and avahi publishes are allowed for everyone as well, so a
+# transient dynamic user is used. If your distribution ships a stricter
+# bluetooth.conf (no "<policy context=default>" allow for org.bluez), either
+# add a matching policy file or drop the DynamicUser line to run as root.
+
+[Unit]
+Description=ESPHome-native Bluetooth proxy for Home Assistant
+Documentation=https://github.com/ankon/btproxy
+# bluetoothd must be running (btproxy never takes over the adapter, it only
+# uses its D-Bus API). avahi is optional, for mDNS discovery.
+After=bluetooth.service avahi-daemon.service
+Wants=avahi-daemon.service
+Requires=bluetooth.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/btproxy --name %H --mdns
+Restart=on-failure
+RestartSec=2
+
+# Transient user; keeps the daemon off the host's user accounts.
+DynamicUser=yes
+
+# Hardening: the daemon only needs the system D-Bus socket, the Bluetooth
+# adapter (via bluetoothd, not directly) and one TCP listener.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target
