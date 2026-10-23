@@ -59,7 +59,7 @@ make test         # go test ./...
 ```
 
 - `--port` — ESPHome native API TCP port (default 6053)
-- `--name` — device name reported to Home Assistant (default: hostname)
+- `--name` — device name reported to Home Assistant (default: short hostname)
 - `--adapter` — BlueZ adapter to scan (default: hci0)
 - `--mdns` — announce via avahi (requires avahi-daemon; otherwise point HA
   at the host manually)
