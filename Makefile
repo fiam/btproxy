@@ -14,6 +14,8 @@ STAMP := .generated-code
 
 PREFIX ?= /usr/local
 
+all: vet test build
+
 bootstrap:
 	mise install
 
