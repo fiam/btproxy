@@ -63,6 +63,11 @@ make test         # go test ./...
 - `--adapter` — BlueZ adapter to scan (default: hci0)
 - `--mdns` — announce via avahi (requires avahi-daemon; otherwise point HA
   at the host manually)
+- `--password` — require an API password from clients (default:
+  `$BTPROXY_PASSWORD`; unset/empty: no password). Home Assistant prompts
+  for this password when you add the integration, and refuses everything
+  but the handshake until it is presented. The API remains plaintext, so
+  this prevents unauthorized enrollment on the LAN but is not encryption.
 - `--debug` — verbose logging
 
 Scanning starts when the first client subscribes with the RAW flag and the
@@ -84,7 +89,10 @@ Home Assistant sees three entities on the device:
 2. In Home Assistant: Settings → Devices & Services → Add Integration →
    **ESPHome**.
 3. Either pick the discovered device (mDNS) or enter `<ip>:6053` manually.
-   No password — same LAN-only trust model as the reference implementation.
+   When btproxy runs with `--password`, enter the same password in the
+   integration's password field — without it, the server answers the
+   handshake with `invalid_password` and closes any connection that tries
+   to read entities or subscribe to advertisements.
 4. The integration shows a switch entity `BLE Scanning`. BLE advertisements
    (for trackers, e.g. ESPresense-style, BTHome or room-presence sensors)
    start flowing as soon as HA subscribes.
@@ -175,7 +183,10 @@ Home Assistant.
 ## Limitations
 
 - Passive proxy only: no GATT connections (feature flags 0x21).
-- No API encryption (plaintext frames, LAN-only trust).
+- No API encryption (plaintext frames). Optional password authentication
+  (`--password` / `$BTPROXY_PASSWORD`) gates everything but the handshake;
+  the password itself still crosses the network in cleartext, so pair this
+  with a firewalled LAN or an isolated VLAN.
 - Advertisement re-encoding loses the original Flags AD and the
   adv/scan-response split; BlueZ hands us parsed properties, which we
   re-encode into standard AD structures.

@@ -518,3 +518,47 @@ func handshake(t *testing.T, c *testClient) {
 	msgType, _ = c.recv()
 	require.Equal(t, uint32(MsgConnectResponse), msgType)
 }
+
+func TestPasswordAuth(t *testing.T) {
+	srv, addr := startServer(t, Config{
+		Name:         "btproxy",
+		MACAddress:   "aa:bb:cc:dd:ee:ff",
+		BluetoothMAC: "aa:bb:cc:dd:ee:ff",
+		Password:     "sekret",
+	})
+	_ = srv
+
+	// Wrong password: ConnectResponse flags invalid_password.
+	c := newTestClient(t, addr)
+	c.send(MsgConnectRequest, (&ConnectRequest{Password: "wrong"}).Encode())
+	msgType, payload := c.recv()
+	require.Equal(t, uint32(MsgConnectResponse), msgType)
+	var conn ConnectResponse
+	require.NoError(t, conn.Decode(payload))
+	assert.True(t, conn.InvalidPassword)
+
+	// Hello stays available without authentication (HA sends it first).
+	c.send(MsgHelloRequest, (&HelloRequest{Client: "test"}).Encode())
+	msgType, _ = c.recv()
+	require.Equal(t, uint32(MsgHelloResponse), msgType)
+
+	// Anything beyond the handshake is refused: the server closes the
+	// connection.
+	c.send(MsgDeviceInfoRequest, nil)
+	_, err := c.conn.Read(make([]byte, 64))
+	assert.Error(t, err, "expected connection close on unauthenticated request")
+
+	// Correct password: full handshake, DeviceInfo reports uses_password.
+	c2 := newTestClient(t, addr)
+	c2.send(MsgConnectRequest, (&ConnectRequest{Password: "sekret"}).Encode())
+	msgType, payload = c2.recv()
+	require.Equal(t, uint32(MsgConnectResponse), msgType)
+	require.NoError(t, conn.Decode(payload))
+	assert.False(t, conn.InvalidPassword)
+	c2.send(MsgDeviceInfoRequest, nil)
+	msgType, payload = c2.recv()
+	require.Equal(t, uint32(MsgDeviceInfoResponse), msgType)
+	var di DeviceInfoResponse
+	require.NoError(t, di.Decode(payload))
+	assert.True(t, di.UsesPassword)
+}

@@ -5,6 +5,7 @@
 package esphome
 
 import (
+	"crypto/subtle"
 	"errors"
 	"fmt"
 	"io"
@@ -28,6 +29,11 @@ type Config struct {
 	FriendlyName    string
 	SuggestedArea   string
 	Port            int
+	// Password, when non-empty, requires clients to present it in the
+	// ConnectRequest handshake before any other request is served.
+	// Home Assistant's ESPHome integration has a matching password
+	// field in its config flow.
+	Password string
 }
 
 // Server serves ESPHome native API clients over TCP.
@@ -161,7 +167,7 @@ func (s *Server) SendAdvertisements(advs []*BluetoothLERawAdvertisement) {
 	s.advsForwarded += uint64(len(advs))
 	var failed []*session
 	for sess := range s.sessions {
-		if !sess.subscribed {
+		if !sess.subscribed || s.needsAuthLocked(sess) {
 			continue
 		}
 		if err := sess.write(MsgBluetoothLERawAdvertisementsResponse, payload); err != nil {
@@ -201,6 +207,14 @@ func (s *Server) hasRawSubscribersLocked() bool {
 	return false
 }
 
+// needsAuthLocked reports whether a session must still be treated as
+// unauthenticated: a password is configured and the session has not
+// presented it in a ConnectRequest yet. Call with s.mu held (broadcast
+// paths) or around an explicit lock (message handling).
+func (s *Server) needsAuthLocked(sess *session) bool {
+	return s.cfg.Password != "" && !sess.authenticated
+}
+
 // pushPeriodicStates broadcasts text sensor and sensor states (uptime,
 // advertisement counter) to all connected clients every statePushEvery
 // until the server is closed.
@@ -233,6 +247,9 @@ func (s *Server) broadcastTextSensorState(st TextSensorStateResponse) {
 	s.mu.Lock()
 	var failed []*session
 	for sess := range s.sessions {
+		if s.needsAuthLocked(sess) {
+			continue
+		}
 		if err := sess.write(MsgTextSensorStateResponse, payload); err != nil {
 			failed = append(failed, sess)
 		}
@@ -249,6 +266,9 @@ func (s *Server) broadcastSensorState(st SensorStateResponse) {
 	s.mu.Lock()
 	var failed []*session
 	for sess := range s.sessions {
+		if s.needsAuthLocked(sess) {
+			continue
+		}
 		if err := sess.write(MsgSensorStateResponse, payload); err != nil {
 			failed = append(failed, sess)
 		}
@@ -284,7 +304,8 @@ type session struct {
 	dec  *frame.Decoder
 	wmu  sync.Mutex
 
-	subscribed bool // subscribed with RAW flag
+	subscribed    bool // subscribed with RAW flag
+	authenticated bool // ConnectRequest accepted (always true when no password is set)
 }
 
 func (s *Server) handleConn(conn net.Conn) {
@@ -328,6 +349,25 @@ func (s *Server) handleConn(conn net.Conn) {
 // connection should be closed.
 func (sess *session) handleMessage(msgType uint32, payload []byte) bool {
 	s := sess.srv
+
+	// When a password is configured, everything except the handshake and
+	// ping requires a successful ConnectRequest first.
+	if s.cfg.Password != "" {
+		switch msgType {
+		case MsgHelloRequest, MsgConnectRequest, MsgDisconnectRequest, MsgPingRequest:
+			// allowed without authentication
+		default:
+			s.mu.Lock()
+			gated := s.needsAuthLocked(sess)
+			s.mu.Unlock()
+			if gated {
+				s.log.Warn("unauthenticated request; closing connection",
+					"remote", sess.conn.RemoteAddr(), "type", msgType)
+				return true
+			}
+		}
+	}
+
 	switch msgType {
 	case MsgHelloRequest:
 		hello := HelloResponse{
@@ -339,7 +379,19 @@ func (sess *session) handleMessage(msgType uint32, payload []byte) bool {
 		return sess.writeErr(MsgHelloResponse, hello.Encode())
 
 	case MsgConnectRequest:
-		// No password support: same trust model as the C reference.
+		var req ConnectRequest
+		if err := req.Decode(payload); err != nil {
+			s.log.Error("bad connect request", "remote", sess.conn.RemoteAddr(), "err", err)
+			return true
+		}
+		if s.cfg.Password != "" && subtle.ConstantTimeCompare([]byte(req.Password), []byte(s.cfg.Password)) != 1 {
+			s.log.Warn("connect rejected: invalid password", "remote", sess.conn.RemoteAddr())
+			resp := ConnectResponse{InvalidPassword: true}
+			return sess.writeErr(MsgConnectResponse, resp.Encode())
+		}
+		s.mu.Lock()
+		sess.authenticated = true
+		s.mu.Unlock()
 		resp := ConnectResponse{}
 		return sess.writeErr(MsgConnectResponse, resp.Encode())
 
@@ -352,6 +404,7 @@ func (sess *session) handleMessage(msgType uint32, payload []byte) bool {
 
 	case MsgDeviceInfoRequest:
 		di := DeviceInfoResponse{
+			UsesPassword:               s.cfg.Password != "",
 			Name:                       s.cfg.Name,
 			MACAddress:                 s.cfg.MACAddress,
 			BluetoothMACAddress:        s.cfg.BluetoothMAC,
@@ -479,6 +532,9 @@ func (s *Server) broadcastSwitchState(st SwitchStateResponse, except map[*sessio
 	var failed []*session
 	for sess := range s.sessions {
 		if except[sess] {
+			continue
+		}
+		if s.needsAuthLocked(sess) {
 			continue
 		}
 		if err := sess.write(MsgSwitchStateResponse, payload); err != nil {

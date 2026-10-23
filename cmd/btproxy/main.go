@@ -34,6 +34,7 @@ func main() {
 		name        = flag.String("name", "", "device name reported to Home Assistant (default: hostname)")
 		adapter     = flag.String("adapter", "hci0", "BlueZ adapter to scan on")
 		mdnsEnabled = flag.Bool("mdns", false, "announce via avahi/mDNS (requires avahi-daemon)")
+		password    = flag.String("password", os.Getenv("BTPROXY_PASSWORD"), "API password required from clients (default: $BTPROXY_PASSWORD; empty: no password)")
 		debug       = flag.Bool("debug", false, "verbose logging")
 	)
 	flag.Parse()
@@ -78,6 +79,7 @@ func main() {
 		Manufacturer:    "btproxy",
 		FriendlyName:    *name,
 		Port:            *port,
+		Password:        *password,
 	}
 
 	// Scanner (optional: the server still serves entities without it).
@@ -151,7 +153,8 @@ func main() {
 		}
 	}
 	logger.Info("btproxy listening",
-		"version", version, "addr", l.Addr().String(), "name", *name, "adapter", *adapter)
+		"version", version, "addr", l.Addr().String(), "name", *name, "adapter", *adapter,
+		"password_required", *password != "")
 
 	serveDone := make(chan struct{})
 	go func() {

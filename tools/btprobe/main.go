@@ -21,6 +21,7 @@ func main() {
 	var (
 		addr     = flag.String("addr", "127.0.0.1:6053", "server address")
 		switchTo = flag.String("switch", "", "toggle the BLE Scanning switch: on|off")
+		password = flag.String("password", "", "API password (when the server requires one)")
 		duration = flag.Duration("duration", 0, "how long to receive advertisements (0: until Ctrl-C)")
 		debug    = flag.Bool("debug", false, "dump raw frames")
 	)
@@ -54,10 +55,15 @@ func main() {
 		hello.APIVersionMajor, hello.APIVersionMinor, hello.ServerInfo, hello.Name)
 
 	// Connect
-	c.send(esphome.MsgConnectRequest, nil, esphome.MsgConnectResponse)
+	c.send(esphome.MsgConnectRequest, (&esphome.ConnectRequest{Password: *password}).Encode(),
+		esphome.MsgConnectResponse)
 	var connect esphome.ConnectResponse
 	c.decodeInto(esphome.MsgConnectResponse, &connect)
 	fmt.Printf("ConnectResponse: invalid_password=%v\n", connect.InvalidPassword)
+	if connect.InvalidPassword {
+		logger.Error("server rejected the password", "addr", *addr)
+		os.Exit(1)
+	}
 
 	// DeviceInfo
 	c.send(esphome.MsgDeviceInfoRequest, nil, esphome.MsgDeviceInfoResponse)
