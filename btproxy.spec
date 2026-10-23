@@ -48,7 +48,12 @@ Home Assistant over the ESPHome native API on TCP 6053.
 
 %install
 install -Dpm0755 bin/btproxy %{buildroot}%{_bindir}/btproxy
-install -Dpm0644 systemd/btproxy.service %{buildroot}%{_unitdir}/btproxy.service
+# The unit in the source tree points at /usr/local/bin (the manual
+# `make install` flow); packaged binaries live in /usr/bin per FHS, so
+# rewrite the path when installing the unit into the package.
+mkdir -p %{buildroot}%{_unitdir}
+sed -e 's|/usr/local/bin/btproxy|%{_bindir}/btproxy|' \
+    systemd/btproxy.service > %{buildroot}%{_unitdir}/btproxy.service
 # Into firewalld's system services directory: the service definition is
 # then known to firewalld without copying to /etc.
 install -Dpm0644 systemd/btproxy-firewalld.xml %{buildroot}%{_prefix}/lib/firewalld/services/btproxy.xml
