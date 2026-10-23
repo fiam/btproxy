@@ -412,6 +412,13 @@ func TestBroadcastAdvertisements(t *testing.T) {
 	require.NoError(t, cnt.Decode(payload))
 	assert.Equal(t, SensorKeyAdvertisements, cnt.Key)
 	assert.Equal(t, float32(1), cnt.State)
+	// SubscribeStates also reports the uptime text sensor; consume it so
+	// it does not leak into the raw reads below.
+	msgType, payload = c1.recv()
+	require.Equal(t, uint32(MsgTextSensorStateResponse), msgType)
+	var uptimeState TextSensorStateResponse
+	require.NoError(t, uptimeState.Decode(payload))
+	assert.Equal(t, TextSensorKeyUptime, uptimeState.Key)
 
 	// The non-subscribed client must not receive anything.
 	c2.conn.SetReadDeadline(time.Now().Add(300 * time.Millisecond))
