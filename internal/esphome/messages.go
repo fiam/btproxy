@@ -35,6 +35,10 @@ const TextSensorKeyUptime uint32 = 101
 // sensor.
 const SensorKeyAdvertisements uint32 = 102
 
+// SensorKeyConnectedClients is the entity key of the Connected Clients
+// sensor.
+const SensorKeyConnectedClients uint32 = 103
+
 // APIVersionMajor/Minor are claimed in HelloResponse. 1.12 matches the C
 // reference implementation and current Home Assistant clients.
 const (

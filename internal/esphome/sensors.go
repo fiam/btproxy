@@ -2,6 +2,7 @@ package esphome
 
 import (
 	"fmt"
+	"net"
 	"strings"
 	"time"
 )
@@ -98,6 +99,15 @@ func (s *Server) defaultSensors() []numericSensor {
 			stateClass: 3,
 			state:      func() float32 { return float32(s.advertisementsSent()) },
 		},
+		{
+			objectID: "connected_clients",
+			key:      SensorKeyConnectedClients,
+			name:     "Connected Clients",
+			icon:     "mdi:account-network",
+			// ESPHome SensorStateClass MEASUREMENT: an instantaneous value.
+			stateClass: 1,
+			state:      func() float32 { return float32(s.connectedClients()) },
+		},
 	}
 }
 
@@ -107,6 +117,24 @@ func (s *Server) advertisementsSent() uint64 {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.advsForwarded
+}
+
+// connectedClients reports how many unique client hosts (by remote
+// address) are currently connected, including unauthenticated ones. A
+// client that opens several connections — Home Assistant does — counts
+// once.
+func (s *Server) connectedClients() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	hosts := make(map[string]struct{}, len(s.sessions))
+	for sess := range s.sessions {
+		remote := sess.conn.RemoteAddr().String()
+		if host, _, err := net.SplitHostPort(remote); err == nil {
+			remote = host
+		}
+		hosts[remote] = struct{}{}
+	}
+	return len(hosts)
 }
 
 // FormatUptime renders a duration ESPHome-style: "1d 2h 3m 45s", dropping

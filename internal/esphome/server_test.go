@@ -252,7 +252,7 @@ func TestHandshakeFlow(t *testing.T) {
 	assert.Equal(t, "aa:bb:cc:dd:ee:ff", di.BluetoothMACAddress)
 	assert.Equal(t, uint32(0x21), di.BluetoothProxyFeatureFlags)
 
-	// ListEntities: switch, sensor, text sensor, then done.
+	// ListEntities: switch, sensors, text sensor, then done.
 	c.send(MsgListEntitiesRequest, nil)
 	msgType, payload = c.recv()
 	require.Equal(t, uint32(MsgListEntitiesSwitchResponse), msgType)
@@ -266,6 +266,14 @@ func TestHandshakeFlow(t *testing.T) {
 	assert.Equal(t, "adv", sensorList.UnitOfMeasurement)
 	assert.Equal(t, uint32(3), sensorList.StateClass, "TOTAL_INCREASING")
 	msgType, payload = c.recv()
+	require.Equal(t, uint32(MsgListEntitiesSensorResponse), msgType)
+	var clientsList ListEntitiesSensorResponse
+	require.NoError(t, clientsList.Decode(payload))
+	assert.Equal(t, "connected_clients", clientsList.ObjectID)
+	assert.Equal(t, SensorKeyConnectedClients, clientsList.Key)
+	assert.Empty(t, clientsList.UnitOfMeasurement)
+	assert.Equal(t, uint32(1), clientsList.StateClass, "MEASUREMENT")
+	msgType, payload = c.recv()
 	require.Equal(t, uint32(MsgListEntitiesTextSensorResponse), msgType)
 	var tsList ListEntitiesTextSensorResponse
 	require.NoError(t, tsList.Decode(payload))
@@ -275,7 +283,7 @@ func TestHandshakeFlow(t *testing.T) {
 	msgType, _ = c.recv()
 	assert.Equal(t, uint32(MsgListEntitiesDoneResponse), msgType)
 
-	// SubscribeStates: switch state, sensor state, then text sensor state.
+	// SubscribeStates: switch state, sensor states, then text sensor state.
 	c.send(MsgSubscribeStatesRequest, nil)
 	msgType, payload = c.recv()
 	require.Equal(t, uint32(MsgSwitchStateResponse), msgType)
@@ -286,6 +294,12 @@ func TestHandshakeFlow(t *testing.T) {
 	require.NoError(t, sensorState.Decode(payload))
 	assert.Equal(t, SensorKeyAdvertisements, sensorState.Key)
 	assert.Equal(t, float32(0), sensorState.State, "no advertisements yet")
+	msgType, payload = c.recv()
+	require.Equal(t, uint32(MsgSensorStateResponse), msgType)
+	var clientsState SensorStateResponse
+	require.NoError(t, clientsState.Decode(payload))
+	assert.Equal(t, SensorKeyConnectedClients, clientsState.Key)
+	assert.Equal(t, float32(1), clientsState.State, "one connected client: this one")
 	msgType, payload = c.recv()
 	require.Equal(t, uint32(MsgTextSensorStateResponse), msgType)
 	var tsState TextSensorStateResponse
@@ -412,6 +426,13 @@ func TestBroadcastAdvertisements(t *testing.T) {
 	require.NoError(t, cnt.Decode(payload))
 	assert.Equal(t, SensorKeyAdvertisements, cnt.Key)
 	assert.Equal(t, float32(1), cnt.State)
+	// The client count is unique per host; c1 and c2 share the loopback.
+	msgType, payload = c1.recv()
+	require.Equal(t, uint32(MsgSensorStateResponse), msgType)
+	var clients SensorStateResponse
+	require.NoError(t, clients.Decode(payload))
+	assert.Equal(t, SensorKeyConnectedClients, clients.Key)
+	assert.Equal(t, float32(1), clients.State)
 	// SubscribeStates also reports the uptime text sensor; consume it so
 	// it does not leak into the raw reads below.
 	msgType, payload = c1.recv()
@@ -513,6 +534,26 @@ func TestTextSensorPeriodicPush(t *testing.T) {
 		}
 	}
 	assert.GreaterOrEqual(t, seen, 2, "expected initial + periodic text sensor pushes")
+}
+
+func TestConnectedClientsSensor(t *testing.T) {
+	srv, addr := startServer(t, Config{Name: "btproxy", MACAddress: "aa:bb:cc:dd:ee:ff"})
+	require.Equal(t, 0, srv.connectedClients())
+
+	// Two connections from the same host count as one client.
+	c1 := newTestClient(t, addr)
+	handshake(t, c1)
+	c2 := newTestClient(t, addr)
+	handshake(t, c2)
+	require.Equal(t, 1, srv.connectedClients())
+
+	// Closing one connection leaves the other; closing both reaches zero.
+	c1.conn.Close()
+	require.Eventually(t, func() bool { return srv.connectedClients() == 1 },
+		2*time.Second, 20*time.Millisecond)
+	c2.conn.Close()
+	require.Eventually(t, func() bool { return srv.connectedClients() == 0 },
+		2*time.Second, 20*time.Millisecond)
 }
 
 // handshake performs the Hello/Connect part every test client needs.

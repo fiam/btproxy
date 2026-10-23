@@ -81,6 +81,7 @@ Home Assistant sees three entities on the device:
 | `BLE Scanning` | switch | gates discovery (on by default) |
 | `Uptime` | text sensor | instance uptime, ESPHome-style (`1d 2h 3m 45s`), refreshed every minute |
 | `Advertisements` | sensor (`adv`, total-increasing) | raw advertisements forwarded since process start |
+| `Connected Clients` | sensor (measurement) | unique client hosts (by remote address) currently connected, including unauthenticated ones — watch this to notice unexpected connections |
 
 ## Home Assistant setup
 
