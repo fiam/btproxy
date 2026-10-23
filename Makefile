@@ -10,9 +10,16 @@ GO_SOURCES := $(shell find cmd internal tinypb tools -name '*.go' ! -name 'api_g
 # the generator.
 STAMP := .generated-code
 
-.PHONY: bootstrap build test vet generate generate-code clean install
+.PHONY: bootstrap build test vet generate generate-code clean install rpm
 
 PREFIX ?= /usr/local
+
+# RPM: version comes from the spec (single source of truth); the git hash
+# of the checkout is embedded in the RPM release (0.git<sha>).
+RPM_VERSION := $(shell sed -n 's/^Version:[[:space:]]*//p' btproxy.spec)
+GIT_HASH     := $(shell git rev-parse --short=8 HEAD 2>/dev/null)
+RPM_TOPDIR   := $(CURDIR)/rpm
+RPMBUILD    ?= rpmbuild
 
 all: vet test build
 
@@ -62,4 +69,18 @@ install: build
 	fi
 
 clean:
-	rm -rf bin $(STAMP) internal/esphome/api_gen.go
+	rm -rf bin $(STAMP) internal/esphome/api_gen.go $(RPM_TOPDIR)
+
+# Builds an RPM from the last commit: the tarball is created with git
+# archive (so it contains exactly what the embedded hash refers to) and
+# the RPM release becomes 0.git<hash>, which sorts below a formal release
+# so `dnf upgrade` moves to released versions cleanly.
+rpm: btproxy.spec
+	@test -n "$(GIT_HASH)" || { echo "ERROR: not a git checkout (cannot embed a git hash)"; exit 1; }
+	@if [ -n "$$(git status --porcelain)" ]; then \
+		echo "WARNING: uncommitted changes are NOT in the RPM; it contains exactly commit $(GIT_HASH)"; \
+	fi
+	@mkdir -p $(RPM_TOPDIR)/BUILD $(RPM_TOPDIR)/RPMS $(RPM_TOPDIR)/SOURCES $(RPM_TOPDIR)/SPECS $(RPM_TOPDIR)/SRPMS
+	git archive --prefix=btproxy-$(RPM_VERSION)/ -o $(RPM_TOPDIR)/SOURCES/btproxy-$(RPM_VERSION).tar.gz HEAD
+	$(RPMBUILD) -bb --define "_topdir $(RPM_TOPDIR)" --define "githash $(GIT_HASH)" btproxy.spec
+	@echo "RPM(s): $(RPM_TOPDIR)/RPMS/"

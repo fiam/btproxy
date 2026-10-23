@@ -131,6 +131,44 @@ sudo firewall-cmd --permanent --add-rich-rule='rule family=ipv4 source address=<
 sudo firewall-cmd --reload
 ```
 
+## RPM packaging (Fedora)
+
+`btproxy.spec` packages the binary, the systemd unit and the firewalld
+service definition; the installed firewalld XML lands in
+`/usr/lib/firewalld/services`, so `firewall-cmd --add-service=btproxy`
+works without copying anything to `/etc`. From a git checkout, the
+easiest path is:
+
+```sh
+make rpm          # builds rpm/RPMS/<arch>/btproxy-<version>-0.git<hash>.rpm
+sudo dnf install rpm/RPMS/$(uname -m)/btproxy-*.rpm
+```
+
+`make rpm` creates the source tarball with `git archive HEAD`, so the RPM
+contains exactly the commit referenced by the embedded hash (a dirty
+working tree prints a warning — commit first to include your changes).
+The snapshot release `0.git<hash>` sorts below a formal release `1`, so a
+later released version upgrades cleanly via `dnf upgrade`.
+
+Manual build, if you prefer:
+
+```sh
+git archive --prefix=btproxy-<version>/ -o ~/rpmbuild/SOURCES/btproxy-<version>.tar.gz HEAD
+rpmbuild -bb btproxy.spec
+sudo dnf install ~/rpmbuild/RPMS/$(uname -m)/btproxy-<version>*.rpm
+```
+
+Notes:
+
+- Bump `Version:` in the spec and add a `%changelog` entry per release;
+  the RPM version-release is stamped into the binary and shows up in
+  logs and Home Assistant's device info.
+- The build runs `go generate` (the generated codec is not in the
+  tarball) and `%check` runs the test suite.
+- Module downloads happen at build time; for fully offline builds run
+  `go mod vendor` first and add `-mod=vendor` to the go commands in the
+  spec.
+
 ## Development tools (`tools/`)
 
 - `btprobe` (in `tools/`) — HA-style client: full handshake, prints
