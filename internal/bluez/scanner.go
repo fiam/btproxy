@@ -23,9 +23,10 @@ type Adv struct {
 // It talks to org.bluez through the system bus; bluetoothd keeps running
 // normally.
 type Scanner struct {
-	log         *slog.Logger
-	conn        *dbus.Conn
-	adapterPath dbus.ObjectPath
+	RequireLiveServiceData bool // scale mode: never replay cached service payloads
+	log                    *slog.Logger
+	conn                   *dbus.Conn
+	adapterPath            dbus.ObjectPath
 
 	adapterAddress string
 
@@ -98,7 +99,7 @@ func (s *Scanner) AdapterAddress() string { return s.adapterAddress }
 // Advertisements returns the scanner event channel.
 func (s *Scanner) Advertisements() <-chan Adv { return s.advs }
 
-// Start begins BLE discovery with Transport=le and DuplicateData=false, and
+// Start begins BLE discovery with Transport=le and DuplicateData=true, and
 // processes BlueZ signals until ctx is cancelled or Stop is called. It is
 // safe to call again after Stop (BlueZ discovery is reference-counted by
 // BlueZ itself; we simply restart it).
@@ -113,7 +114,7 @@ func (s *Scanner) Start(ctx context.Context) error {
 	adapter := s.conn.Object(bluezName, s.adapterPath)
 	filter := map[string]dbus.Variant{
 		"Transport":     dbus.MakeVariant("le"),
-		"DuplicateData": dbus.MakeVariant(false),
+		"DuplicateData": dbus.MakeVariant(true),
 	}
 	if err := adapter.Call(adapterIface+".SetDiscoveryFilter", 0, filter).Err; err != nil {
 		return fmt.Errorf("bluez: SetDiscoveryFilter: %w", err)
@@ -147,8 +148,7 @@ func (s *Scanner) Start(ctx context.Context) error {
 	// Seed the snapshot cache with devices BlueZ already knows about:
 	// their parsed properties (name, manufacturer/service data, UUIDs)
 	// only reach us via signals when they change, so without seeding,
-	// cached devices would advertise RSSI-only forever. Emit each one
-	// once so subscribers get the complete picture immediately.
+	// cached metadata remains useful. Never replay cached service data as a new reading.
 	s.seedDevices()
 
 	s.log.Info("bluetooth discovery started", "adapter", s.adapterPath)
@@ -156,7 +156,7 @@ func (s *Scanner) Start(ctx context.Context) error {
 }
 
 // seedDevices populates the snapshot cache from the BlueZ ObjectManager and
-// emits one advertisement per already-known device with a signal.
+// never emits cached readings. Only live ServiceData signals can be forwarded.
 func (s *Scanner) seedDevices() {
 	om := s.conn.Object(bluezName, "/")
 	var objects map[dbus.ObjectPath]map[string]map[string]dbus.Variant
@@ -181,11 +181,10 @@ func (s *Scanner) seedDevices() {
 		s.mu.Lock()
 		s.devices[pathToMAC(string(path))] = p
 		s.mu.Unlock()
-		if p.RSSI != 0 || len(p.ManufacturerData) > 0 || len(p.ServiceData) > 0 ||
-			len(p.ServiceUUIDs) > 0 || p.Name != "" {
+		if !s.RequireLiveServiceData {
 			s.emit(p, encodeAD(p))
-			n++
 		}
+		n++
 	}
 	s.log.Info("seeded device cache from BlueZ", "devices", n)
 }
@@ -291,7 +290,7 @@ func (s *Scanner) handleSignal(sig *dbus.Signal) {
 		}
 
 	case objectMgrIface + ".InterfacesAdded":
-		if len(sig.Body) < 2 || !s.underAdapter(sig.Path) {
+		if len(sig.Body) < 2 {
 			return
 		}
 		ifaces, ok := sig.Body[1].(map[string]map[string]dbus.Variant)
@@ -302,15 +301,23 @@ func (s *Scanner) handleSignal(sig *dbus.Signal) {
 		if !ok {
 			return
 		}
-		s.addDevice(string(sig.Path), props)
+		path, ok := sig.Body[0].(dbus.ObjectPath)
+		if ok && s.underAdapter(path) {
+			s.addDevice(string(path), props)
+		}
 
 	case objectMgrIface + ".InterfacesRemoved":
 		if len(sig.Body) < 2 {
 			return
 		}
-		ifaces, _ := sig.Body[1].(map[string]dbus.Variant)
-		if _, ok := ifaces[deviceIface]; ok {
-			s.removeDevice(string(sig.Path))
+		path, ok := sig.Body[0].(dbus.ObjectPath)
+		ifaces, _ := sig.Body[1].([]string)
+		if ok && s.underAdapter(path) {
+			for _, iface := range ifaces {
+				if iface == deviceIface {
+					s.removeDevice(string(path))
+				}
+			}
 		}
 	}
 }
@@ -375,7 +382,7 @@ func (s *Scanner) updateDevice(path string, changed map[string]dbus.Variant) {
 	}
 	s.mu.Unlock()
 
-	if changedView {
+	if _, live := changed["ServiceData"]; (s.RequireLiveServiceData && live) || (!s.RequireLiveServiceData && changedView) {
 		s.emit(p, data)
 	}
 }
@@ -398,8 +405,7 @@ func (s *Scanner) addDevice(path string, props map[string]dbus.Variant) {
 	s.devices[mac] = p
 	s.mu.Unlock()
 
-	if p.RSSI != 0 || len(p.ManufacturerData) > 0 || len(p.ServiceData) > 0 ||
-		len(p.ServiceUUIDs) > 0 || p.Name != "" {
+	if _, live := props["ServiceData"]; !s.RequireLiveServiceData || live {
 		s.emit(p, encodeAD(p))
 	}
 }
@@ -490,7 +496,7 @@ func applyProps(p *deviceProps, props map[string]dbus.Variant) {
 	if v, ok := props["ServiceData"]; ok {
 		p.ServiceData = serviceDataOf(v)
 	}
-	if v, ok := props["ServiceUUIDs"]; ok {
+	if v, ok := props["UUIDs"]; ok {
 		p.ServiceUUIDs = serviceUUIDsOf(v)
 	}
 }

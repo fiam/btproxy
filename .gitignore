@@ -2,3 +2,7 @@
 /.generated-code
 /internal/esphome/api_gen.go
 /rpm/
+
+/containers/btproxy
+/containers/LICENSE
+*.env

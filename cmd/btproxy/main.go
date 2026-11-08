@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -30,14 +31,34 @@ const (
 
 func main() {
 	var (
-		port        = flag.Int("port", 6053, "TCP port for the ESPHome native API")
-		name        = flag.String("name", "", "device name reported to Home Assistant (default: hostname)")
-		adapter     = flag.String("adapter", "hci0", "BlueZ adapter to scan on")
-		mdnsEnabled = flag.Bool("mdns", false, "announce via avahi/mDNS (requires avahi-daemon)")
-		password    = flag.String("password", os.Getenv("BTPROXY_PASSWORD"), "API password required from clients (default: $BTPROXY_PASSWORD; empty: no password)")
-		debug       = flag.Bool("debug", false, "verbose logging")
+		noiseKey     = flag.String("noise-key", os.Getenv("BTPROXY_NOISE_KEY"), "base64 ESPHome encryption key")
+		allowAddress = flag.String("allow-address", "", "only forward this BLE MAC address")
+		port         = flag.Int("port", 6053, "TCP port for the ESPHome native API")
+		name         = flag.String("name", "", "device name reported to Home Assistant (default: hostname)")
+		adapter      = flag.String("adapter", "hci0", "BlueZ adapter to scan on")
+		mdnsEnabled  = flag.Bool("mdns", false, "announce via avahi/mDNS (requires avahi-daemon)")
+		password     = flag.String("password", os.Getenv("BTPROXY_PASSWORD"), "API password required from clients (default: $BTPROXY_PASSWORD; empty: no password)")
+		debug        = flag.Bool("debug", false, "verbose logging")
 	)
 	flag.Parse()
+	var noisePSK []byte
+	if *noiseKey != "" {
+		var err error
+		noisePSK, err = base64.StdEncoding.DecodeString(*noiseKey)
+		if err != nil || len(noisePSK) != 32 {
+			fmt.Fprintln(os.Stderr, "Noise key must be base64-encoded 32 bytes")
+			os.Exit(2)
+		}
+		*password = ""
+	}
+	if *allowAddress != "" {
+		addr, err := net.ParseMAC(*allowAddress)
+		if err != nil || len(addr) != 6 {
+			fmt.Fprintln(os.Stderr, "invalid --allow-address")
+			os.Exit(2)
+		}
+		*allowAddress = strings.ToUpper(addr.String())
+	}
 
 	level := slog.LevelInfo
 	if *debug {
@@ -80,6 +101,7 @@ func main() {
 		FriendlyName:    *name,
 		Port:            *port,
 		Password:        *password,
+		NoisePSK:        noisePSK,
 	}
 
 	// Scanner (optional: the server still serves entities without it).
@@ -87,11 +109,12 @@ func main() {
 	scanner, err = bluez.New(logger, *adapter)
 	if err != nil {
 		logger.Error("bluetooth scanner unavailable; running without BLE forwarding", "err", err)
-		scanner = nil
+		os.Exit(1)
 	} else {
 		if addr := scanner.AdapterAddress(); addr != "" {
 			cfg.BluetoothMAC = addr
 		}
+		scanner.RequireLiveServiceData = *allowAddress != ""
 		defer scanner.Close()
 	}
 
@@ -114,6 +137,9 @@ func main() {
 		go batcher.Run(ctx)
 		go func() {
 			for adv := range scanner.Advertisements() {
+				if *allowAddress != "" && !strings.EqualFold(adv.Address, *allowAddress) {
+					continue
+				}
 				addr, err := esphome.PackMAC(adv.Address)
 				if err != nil {
 					logger.Warn("dropping advertisement with bad address", "address", adv.Address)
@@ -144,6 +170,9 @@ func main() {
 		txt := []string{
 			"version=" + cfg.ESPHomeVersion,
 			"mac=" + cfg.MACAddress,
+		}
+		if len(noisePSK) > 0 {
+			txt = append(txt, "api_encryption=Noise_NNpsk0_25519_ChaChaPoly_SHA256")
 		}
 		pub, err := mdns.Publish(logger, cfg.Name, *port, txt)
 		if err != nil {

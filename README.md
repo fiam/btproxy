@@ -1,5 +1,11 @@
 # btproxy — ESPHome-native Bluetooth proxy in Go
 
+This is [fiam/btproxy](https://github.com/fiam/btproxy), a fork of
+[ankon/btproxy](https://github.com/ankon/btproxy), based on commit
+`fff9c159353e1edbaaeaf14176091539ae8061c2`. It adds ESPHome Noise encryption,
+optional single-device forwarding, live scale-packet handling and BlueZ fixes.
+See [Podman installation](containers/README.md) for a container deployment.
+
 A single Go binary that makes a Linux host act as a **passive ESPHome
 Bluetooth proxy** for Home Assistant, without taking over the Bluetooth
 adapter: it scans through the BlueZ D-Bus API, so the system `bluetoothd`
@@ -31,7 +37,7 @@ Home Assistant ──TCP 6053, ESPHome Native API──▶ btproxy ──D-Bus�
   switch entity (key 100), advertisement batching (16 per batch, 100 ms
   flush interval) and broadcast to RAW-flag subscribers.
 - **`internal/bluez/`** — passive scanner: `SetDiscoveryFilter
-  {Transport: le, DuplicateData: false}` + `StartDiscovery`, PropertiesChanged
+  {Transport: le, DuplicateData: true}` + `StartDiscovery`, PropertiesChanged
   / InterfacesAdded signals, per-MAC snapshot cache, re-encoding of the
   parsed BlueZ properties into standard AD structures (manufacturer data,
   service data, UUIDs, tx power, name — capped at 62 bytes, little-endian).
@@ -39,7 +45,8 @@ Home Assistant ──TCP 6053, ESPHome Native API──▶ btproxy ──D-Bus�
 - **`internal/mdns/`** — announces `_esphomelib._tcp` through the avahi
   daemon's D-Bus API (reuses godbus, no extra dependency).
 
-Non-stdlib dependency: **`github.com/godbus/dbus/v5`** only.
+Runtime dependencies include **`github.com/godbus/dbus/v5`** and
+**`github.com/flynn/noise`** (plus their cryptographic dependencies).
 
 ## Build
 
@@ -63,7 +70,15 @@ make test         # go test ./...
 - `--adapter` — BlueZ adapter to scan (default: hci0)
 - `--mdns` — announce via avahi (requires avahi-daemon; otherwise point HA
   at the host manually)
-- `--password` — require an API password from clients (default:
+- `--noise-key` — base64-encoded 32-byte ESPHome Noise key (default:
+  `$BTPROXY_NOISE_KEY`). Encryption disables password authentication and rejects
+  plaintext clients. Generate a key with `openssl rand -base64 32`, keep it in a
+  private environment file, and enter the same key in HA.
+- `--allow-address` — forward one BLE MAC address. This also enables scale mode:
+  only live ServiceData updates are forwarded; cached startup data and RSSI-only
+  changes cannot replay an old weighing. Omit this option for general BLE use.
+- `--password` — legacy, deprecated plaintext authentication. Prefer encryption.
+  Require an API password from clients (default:
   `$BTPROXY_PASSWORD`; unset/empty: no password). Home Assistant prompts
   for this password when you add the integration, and refuses everything
   but the handshake until it is presented. The API remains plaintext, so
@@ -74,7 +89,7 @@ Scanning starts when the first client subscribes with the RAW flag and the
 `BLE Scanning` switch (exposed as an entity) is on; it stops when the last
 subscriber leaves or the switch is toggled off from HA.
 
-Home Assistant sees three entities on the device:
+Home Assistant sees four entities on the device:
 
 | Entity | Type | Description |
 |---|---|---|
@@ -90,7 +105,8 @@ Home Assistant sees three entities on the device:
 2. In Home Assistant: Settings → Devices & Services → Add Integration →
    **ESPHome**.
 3. Either pick the discovered device (mDNS) or enter `<ip>:6053` manually.
-   When btproxy runs with `--password`, enter the same password in the
+   When using Noise, enter the encryption key when HA asks. Legacy `--password`
+   configurations require the same password in the
    integration's password field — without it, the server answers the
    handshake with `invalid_password` and closes any connection that tries
    to read entities or subscribe to advertisements.
@@ -222,10 +238,11 @@ Home Assistant.
 ## Limitations
 
 - Passive proxy only: no GATT connections (feature flags 0x21).
-- No API encryption (plaintext frames). Optional password authentication
-  (`--password` / `$BTPROXY_PASSWORD`) gates everything but the handshake;
-  the password itself still crosses the network in cleartext, so pair this
-  with a firewalled LAN or an isolated VLAN.
+- Encryption requires a configured Noise key. Legacy password mode remains
+  plaintext. DeviceInfo is available before password authentication so HA can
+  discover that a password is required.
+- `--allow-address` is intended for service-data devices such as Xiaomi scales;
+  manufacturer-data-only devices need the unfiltered mode.
 - Advertisement re-encoding loses the original Flags AD and the
   adv/scan-response split; BlueZ hands us parsed properties, which we
   re-encode into standard AD structures.

@@ -1,0 +1,24 @@
+#include <tunables/global>
+
+profile btproxy flags=(attach_disconnected,mediate_deleted) {
+  #include <abstractions/base>
+  /btproxy mrix,
+  /proc/** r,
+  /sys/class/net/** r,
+  /sys/devices/** r,
+  /run/dbus/system_bus_socket rw,
+  network inet stream,
+  network inet6 stream,
+  network netlink raw,
+  network unix stream,
+  dbus (send, receive) bus=system peer=(name=org.freedesktop.DBus),
+  dbus (send, receive) bus=system peer=(name=org.bluez),
+  dbus (send, receive) bus=system peer=(name=org.freedesktop.Avahi),
+  # Broadcast signals carry unique bus names, not the well-known service name.
+  dbus receive bus=system path=/org/bluez{,/**} interface=org.freedesktop.DBus.Properties peer=(label=unconfined),
+  dbus receive bus=system path=/ interface=org.freedesktop.DBus.ObjectManager peer=(label=unconfined),
+  dbus receive bus=system interface=org.freedesktop.Avahi.* peer=(label=unconfined),
+  signal (receive),
+  signal (send) peer=btproxy,
+  signal (send) peer="crun//&btproxy",
+}

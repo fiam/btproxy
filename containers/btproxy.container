@@ -1,0 +1,26 @@
+[Unit]
+Description=ESPHome-compatible scale BLE proxy
+After=bluetooth.service avahi-daemon.service network-online.target
+Requires=bluetooth.service
+Wants=avahi-daemon.service network-online.target
+
+[Container]
+Image=localhost/btproxy:pinned
+Pull=never
+ContainerName=btproxy
+Network=host
+Volume=/run/dbus:/run/dbus:ro
+Environment=DBUS_SYSTEM_BUS_ADDRESS=unix:path=/run/dbus/system_bus_socket
+EnvironmentFile=/etc/btproxy/api.env
+Exec=--name btproxy --adapter hci0 --port 6053 --mdns --allow-address AA:BB:CC:DD:EE:FF
+ReadOnly=true
+DropCapability=all
+NoNewPrivileges=true
+PodmanArgs=--security-opt=apparmor=btproxy
+
+[Service]
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

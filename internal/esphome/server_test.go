@@ -590,9 +590,15 @@ func TestPasswordAuth(t *testing.T) {
 	msgType, _ = c.recv()
 	require.Equal(t, uint32(MsgHelloResponse), msgType)
 
-	// Anything beyond the handshake is refused: the server closes the
-	// connection.
+	// HA probes DeviceInfo before authentication to learn UsesPassword.
 	c.send(MsgDeviceInfoRequest, nil)
+	msgType, payload = c.recv()
+	require.Equal(t, uint32(MsgDeviceInfoResponse), msgType)
+	var probe DeviceInfoResponse
+	require.NoError(t, probe.Decode(payload))
+	assert.True(t, probe.UsesPassword)
+	// Entity and advertisement data remain gated.
+	c.send(MsgListEntitiesRequest, nil)
 	_, err := c.conn.Read(make([]byte, 64))
 	assert.Error(t, err, "expected connection close on unauthenticated request")
 

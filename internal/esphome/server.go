@@ -34,6 +34,7 @@ type Config struct {
 	// Home Assistant's ESPHome integration has a matching password
 	// field in its config flow.
 	Password string
+	NoisePSK []byte
 }
 
 // Server serves ESPHome native API clients over TCP.
@@ -309,6 +310,16 @@ type session struct {
 }
 
 func (s *Server) handleConn(conn net.Conn) {
+	if len(s.cfg.NoisePSK) > 0 {
+		raw := conn
+		var err error
+		conn, err = acceptNoise(raw, s.cfg)
+		if err != nil {
+			raw.Close()
+			s.log.Debug("Noise handshake rejected", "err", err)
+			return
+		}
+	}
 	sess := &session{srv: s, conn: conn, dec: &frame.Decoder{}}
 	defer func() {
 		s.removeSession(sess)
@@ -354,7 +365,7 @@ func (sess *session) handleMessage(msgType uint32, payload []byte) bool {
 	// ping requires a successful ConnectRequest first.
 	if s.cfg.Password != "" {
 		switch msgType {
-		case MsgHelloRequest, MsgConnectRequest, MsgDisconnectRequest, MsgPingRequest:
+		case MsgHelloRequest, MsgConnectRequest, MsgDisconnectRequest, MsgPingRequest, MsgDeviceInfoRequest:
 			// allowed without authentication
 		default:
 			s.mu.Lock()

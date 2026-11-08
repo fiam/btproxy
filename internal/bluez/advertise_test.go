@@ -225,11 +225,11 @@ func TestHandleInterfacesAdded(t *testing.T) {
 		Path: dbus.ObjectPath("/org/bluez/hci0/dev_11_22_33_44_55_66"),
 		Body: []any{dbus.ObjectPath("/org/bluez/hci0/dev_11_22_33_44_55_66"), map[string]map[string]dbus.Variant{
 			deviceIface: {
-				"Address":      mustV(t, "11:22:33:44:55:66"),
-				"AddressType":  mustV(t, "public"),
-				"RSSI":         mustV(t, int16(-59)),
-				"Name":         mustV(t, "TestDev"),
-				"ServiceUUIDs": mustV(t, []string{"0000180f-0000-1000-8000-00805f9b34fb"}),
+				"Address":     mustV(t, "11:22:33:44:55:66"),
+				"AddressType": mustV(t, "public"),
+				"RSSI":        mustV(t, int16(-59)),
+				"Name":        mustV(t, "TestDev"),
+				"UUIDs":       mustV(t, []string{"0000180f-0000-1000-8000-00805f9b34fb"}),
 			},
 		}},
 	}
@@ -261,9 +261,7 @@ func TestInterfacesRemovedEvictsCache(t *testing.T) {
 	s.handleSignal(&dbus.Signal{
 		Name: "org.freedesktop.DBus.ObjectManager.InterfacesRemoved",
 		Path: dbus.ObjectPath(addPath),
-		Body: []any{dbus.ObjectPath(addPath), map[string]dbus.Variant{
-			deviceIface: mustV(t, true),
-		}},
+		Body: []any{dbus.ObjectPath(addPath), []string{deviceIface}},
 	})
 
 	// After eviction, the next advertisement for the same path is emitted
