@@ -1,4 +1,7 @@
 FROM scratch
+ARG SOURCE_REVISION
+LABEL org.opencontainers.image.source="https://github.com/fiam/btproxy"
+LABEL org.opencontainers.image.revision=$SOURCE_REVISION
 COPY btproxy /btproxy
 COPY LICENSE /licenses/btproxy
 USER 65534:65534

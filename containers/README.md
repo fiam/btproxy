@@ -11,7 +11,7 @@ It has been exercised with Podman 5.7 on Ubuntu 26.04 and a Raspberry Pi 5.
    ```sh
    CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -o containers/btproxy ./cmd/btproxy
    cp LICENSE containers/LICENSE
-   sudo podman build --pull=never -t localhost/btproxy:pinned -f containers/Containerfile containers
+   sudo podman build --pull=never --build-arg SOURCE_REVISION="$(git rev-parse HEAD)" -t localhost/btproxy:pinned -f containers/Containerfile containers
    ```
 
 3. Create `/etc/btproxy/api.env` owned by root with mode 0600. Set
